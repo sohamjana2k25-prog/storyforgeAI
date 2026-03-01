@@ -112,7 +112,7 @@ Resources:
     Properties:
       LayerName: contentforge-common
       Description: Shared utilities for ContentForge Lambda functions
-      ContentUri: backend/layers/common/
+      ContentUri: ../backend/layers/common/
       CompatibleRuntimes:
         - python3.11
 
@@ -185,7 +185,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub 'contentforge-ingestion-${Environment}'
-      CodeUri: backend/lambdas/ingestion/
+      CodeUri: ../backend/lambdas/ingestion/
       Handler: handler.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Description: Handles URL, PDF, and YouTube content ingestion
@@ -225,7 +225,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub 'contentforge-analyze-${Environment}'
-      CodeUri: backend/lambdas/analyze/
+      CodeUri: ../backend/lambdas/analyze/
       Handler: handler.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Description: Amazon Comprehend + Bedrock content analysis
@@ -242,7 +242,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub 'contentforge-transform-${Environment}'
-      CodeUri: backend/lambdas/transform/
+      CodeUri: ../backend/lambdas/transform/
       Handler: handler.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Description: Comic, Meme, and Infographic generation with Bedrock SDXL
@@ -272,7 +272,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub 'contentforge-schedule-${Environment}'
-      CodeUri: backend/lambdas/schedule/
+      CodeUri: ../backend/lambdas/schedule/
       Handler: handler.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
       Description: AI scheduling suggestions and Twitter distribution
@@ -361,8 +361,6 @@ Resources:
       AccessTokenValidity: 24
       IdTokenValidity: 24
       RefreshTokenValidity: 30
-
-  # ─── Outputs ──────────────────────────────────────────────────
 
 Outputs:
   ApiGatewayUrl:
