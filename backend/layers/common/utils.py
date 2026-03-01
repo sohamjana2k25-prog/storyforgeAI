@@ -35,7 +35,6 @@ def error(message: str, status: int = 500) -> dict:
 
 
 def handle_options() -> dict:
-    """Handle CORS preflight"""
     return response(200, {})
 
 
@@ -56,11 +55,9 @@ def get_comprehend_client(region: str = None):
 
 
 def get_s3_client(region: str = None):
-    region = region or os.environ.get('AWS_REGION', 'ap-south-1')
     return boto3.client(
         's3',
-        region_name=region,
-        endpoint_url=f'https://s3.{region}.amazonaws.com'
+        region_name=region or os.environ.get('AWS_REGION', 'ap-south-1')
     )
 
 
@@ -90,7 +87,6 @@ def get_dynamodb_resource(region: str = None):
 def invoke_claude(prompt: str, system: str = None, max_tokens: int = 4096) -> str:
     """
     Invoke Claude 3 Sonnet via Amazon Bedrock.
-    Model: anthropic.claude-3-sonnet-20240229-v1:0
     """
     client = get_bedrock_client()
 
@@ -116,26 +112,25 @@ def invoke_claude(prompt: str, system: str = None, max_tokens: int = 4096) -> st
 
 def invoke_sdxl(prompt: str, negative_prompt: str = '', width: int = 1024, height: int = 1024) -> bytes:
     """
-    Invoke Stable Diffusion XL via Amazon Bedrock.
-    Model: stability.stable-diffusion-xl-v1
-    Returns raw image bytes (PNG).
+    Invoke Titan Image Generator via Amazon Bedrock.
     """
     import base64
     client = get_bedrock_client()
 
     body = {
-    'taskType': 'TEXT_IMAGE',
-    'textToImageParams': {
-        'text': prompt,
-        'negativeText': negative_prompt or 'blurry, low quality, distorted',
-    },
-    'imageGenerationConfig': {
-        'numberOfImages': 1,
-        'width': min(width, 1024),
-        'height': min(height, 1024),
-        'cfgScale': 8.0,
+        'taskType': 'TEXT_IMAGE',
+        'textToImageParams': {
+            'text': prompt,
+            'negativeText': negative_prompt or 'blurry, low quality, distorted',
+        },
+        'imageGenerationConfig': {
+            'numberOfImages': 1,
+            'width': min(width, 1024),
+            'height': min(height, 1024),
+            'cfgScale': 8.0,
+        }
     }
-    }
+
     resp = client.invoke_model(
         modelId='amazon.titan-image-generator-v1',
         body=json.dumps(body),
@@ -163,7 +158,7 @@ def upload_image_to_s3(image_bytes: bytes, key: str, bucket: str = None) -> str:
     url = s3.generate_presigned_url(
         'get_object',
         Params={'Bucket': bucket, 'Key': key},
-        ExpiresIn=86400,  # 24 hours
+        ExpiresIn=86400,
     )
     return url
 
