@@ -115,8 +115,6 @@ Resources:
       ContentUri: backend/layers/common/
       CompatibleRuntimes:
         - python3.11
-    Metadata:
-      BuildMethod: python3.11
 
   # ─── IAM Role ────────────────────────────────────────────────
 
