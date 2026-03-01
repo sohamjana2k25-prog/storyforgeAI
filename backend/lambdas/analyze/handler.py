@@ -1,10 +1,5 @@
 """
 Analysis Lambda
----------------
-POST /analyze → Run full content analysis pipeline:
-  1. Amazon Comprehend: sentiment, key phrases, entities
-  2. Amazon Bedrock (Claude 3): extract themes, quotable moments, statistics
-  3. Combine into unified analysis object
 """
 
 import json
@@ -23,49 +18,57 @@ def analyze_content(event):
         if not text:
             return error('text is required', 400)
 
+        print(f"Analyzing text of length: {len(text)}")
+
         # ── Step 1: Amazon Comprehend ─────────────────────────────
-        comprehend = get_comprehend_client()
+        try:
+            comprehend = get_comprehend_client()
+            comprehend_text = text[:4900]
 
-        # Truncate for Comprehend (5000 byte limit per call)
-        comprehend_text = text[:4900]
+            sentiment_resp = comprehend.detect_sentiment(
+                Text=comprehend_text,
+                LanguageCode='en'
+            )
+            key_phrases_resp = comprehend.detect_key_phrases(
+                Text=comprehend_text,
+                LanguageCode='en'
+            )
+            entities_resp = comprehend.detect_entities(
+                Text=comprehend_text,
+                LanguageCode='en'
+            )
 
-        sentiment_resp = comprehend.detect_sentiment(
-            Text=comprehend_text,
-            LanguageCode='en'
-        )
-        key_phrases_resp = comprehend.detect_key_phrases(
-            Text=comprehend_text,
-            LanguageCode='en'
-        )
-        entities_resp = comprehend.detect_entities(
-            Text=comprehend_text,
-            LanguageCode='en'
-        )
+            sentiment = sentiment_resp['Sentiment']
+            sentiment_score = sentiment_resp['SentimentScore']
+            sentiment_numeric = sentiment_score.get('Positive', 0) - sentiment_score.get('Negative', 0)
 
-        # Process Comprehend results
-        sentiment = sentiment_resp['Sentiment']
-        sentiment_score = sentiment_resp['SentimentScore']
-        sentiment_numeric = sentiment_score.get('Positive', 0) - sentiment_score.get('Negative', 0)
+            key_phrases = sorted(
+                key_phrases_resp['KeyPhrases'],
+                key=lambda x: x['Score'],
+                reverse=True
+            )[:10]
+            key_phrase_texts = [p['Text'] for p in key_phrases]
 
-        key_phrases = sorted(
-            key_phrases_resp['KeyPhrases'],
-            key=lambda x: x['Score'],
-            reverse=True
-        )[:10]
-        key_phrase_texts = [p['Text'] for p in key_phrases]
+            entities = [
+                {'text': e['Text'], 'type': e['Type'], 'score': round(e['Score'], 2)}
+                for e in entities_resp['Entities']
+                if e['Score'] > 0.85
+            ][:10]
 
-        entities = [
-            {'text': e['Text'], 'type': e['Type'], 'score': round(e['Score'], 2)}
-            for e in entities_resp['Entities']
-            if e['Score'] > 0.85
-        ][:10]
+            print(f"Comprehend done. Sentiment: {sentiment}")
+
+        except Exception as e:
+            print(f"Comprehend failed: {str(e)}")
+            sentiment = 'NEUTRAL'
+            sentiment_numeric = 0
+            key_phrase_texts = []
+            entities = []
 
         # ── Step 2: Amazon Bedrock (Claude 3) ────────────────────
+        try:
+            text_for_claude = text[:15000] if len(text) > 15000 else text
 
-        # Chunk text if too long
-        text_for_claude = text[:15000] if len(text) > 15000 else text
-
-        analysis_prompt = f"""Analyze the following content and extract structured insights.
+            analysis_prompt = f"""Analyze the following content and extract structured insights.
 Target audience: {target_audience}
 Tone preference: {tone_preference}
 
@@ -79,27 +82,32 @@ Return a JSON object with EXACTLY these fields (no extra text, just JSON):
   "key_themes": ["theme1", "theme2", "theme3", "theme4"],
   "quotable_moments": ["punchy quote 1", "punchy quote 2", "punchy quote 3"],
   "statistics": [
-    {{"label": "stat name", "value": "number or %"}},
-    ...
+    {{"label": "stat name", "value": "number or %"}}
   ],
   "summary": "2-3 sentence summary of the core message",
-  "humor_score": 0.0-1.0,
+  "humor_score": 0.3,
   "core_conflict": "the main tension or problem being addressed",
   "target_emotion": "the dominant emotion this content evokes",
   "meme_potential": "describe one specific ironic or humorous angle in this content",
   "comic_storyline": "a 3-act structure for a comic: setup, conflict, resolution"
 }}"""
 
-        claude_response = invoke_claude(
-            prompt=analysis_prompt,
-            system="You are a content analysis expert. Always respond with valid JSON only."
-        )
+            print("Calling Bedrock Claude...")
+            claude_response = invoke_claude(
+                prompt=analysis_prompt,
+                system="You are a content analysis expert. Always respond with valid JSON only."
+            )
+            print(f"Claude response length: {len(claude_response)}")
 
-        # Parse Claude response
-        json_match = re.search(r'\{[\s\S]*\}', claude_response)
-        if json_match:
-            ai_analysis = json.loads(json_match.group())
-        else:
+            json_match = re.search(r'\{[\s\S]*\}', claude_response)
+            if json_match:
+                ai_analysis = json.loads(json_match.group())
+                print("Claude JSON parsed successfully")
+            else:
+                raise Exception("No JSON found in Claude response")
+
+        except Exception as e:
+            print(f"Bedrock failed: {str(e)}")
             ai_analysis = {
                 'key_themes': key_phrase_texts[:4],
                 'quotable_moments': [],
@@ -114,13 +122,10 @@ Return a JSON object with EXACTLY these fields (no extra text, just JSON):
 
         # ── Step 3: Merge Results ─────────────────────────────────
         result = {
-            # From Comprehend
             'sentiment': sentiment,
             'sentiment_numeric': round(sentiment_numeric, 3),
             'comprehend_key_phrases': key_phrase_texts,
             'entities': entities,
-
-            # From Bedrock
             'key_themes': ai_analysis.get('key_themes', []),
             'quotable_moments': ai_analysis.get('quotable_moments', []),
             'statistics': ai_analysis.get('statistics', []),
@@ -130,15 +135,17 @@ Return a JSON object with EXACTLY these fields (no extra text, just JSON):
             'target_emotion': ai_analysis.get('target_emotion', sentiment),
             'meme_potential': ai_analysis.get('meme_potential', ''),
             'comic_storyline': ai_analysis.get('comic_storyline', ''),
-
-            # Meta
             'word_count': len(text.split()),
             'reading_time_minutes': round(len(text.split()) / 200, 1),
         }
 
+        print(f"Analysis complete: {json.dumps(result)[:200]}")
         return ok(result)
 
     except Exception as e:
+        print(f"FATAL ERROR: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
         return error(f'Analysis failed: {str(e)}')
 
 
