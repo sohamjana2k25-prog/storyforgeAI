@@ -1,0 +1,45 @@
+name: Deploy ContentForge to AWS
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install SAM CLI
+        run: pip install aws-sam-cli
+
+      - name: Install Lambda dependencies
+        run: |
+          pip install -r backend/requirements.txt \
+            -t backend/layers/common/python/
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: SAM Build
+        run: sam build --template infrastructure/template.yaml
+
+      - name: SAM Deploy
+        run: |
+          sam deploy \
+            --stack-name contentforge-prod \
+            --region ap-south-1 \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            --resolve-s3 \
+            --parameter-overrides Environment=prod \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
