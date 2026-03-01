@@ -18,12 +18,10 @@ jobs:
       - name: Install SAM CLI
         run: pip install aws-sam-cli
 
-      - name: Install Lambda dependencies
+      - name: Prepare Lambda Layer
         run: |
           mkdir -p backend/layers/common/python
-          pip install -r backend/requirements.txt \
-            -t backend/layers/common/python/
-          cp backend/layers/common/utils.py backend/layers/common/python/
+          cp backend/requirements.txt backend/layers/common/requirements.txt
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
