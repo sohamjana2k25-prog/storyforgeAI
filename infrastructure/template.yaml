@@ -316,10 +316,12 @@ Resources:
       GatewayResponses:
         DEFAULT_4XX:
           ResponseParameters:
-            gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
         DEFAULT_5XX:
           ResponseParameters:
-            gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
 
   # ─── Cognito User Pool ────────────────────────────────────────
 
