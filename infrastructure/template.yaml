@@ -1,0 +1,392 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  ContentForge — AI Content Repurposing Ecosystem
+  AWS AI 4 Bharat Hackathon
+  
+  Services Used:
+  - Amazon Bedrock (Claude 3 Sonnet + Stable Diffusion XL)
+  - Amazon Comprehend
+  - Amazon Textract
+  - Amazon Transcribe
+  - Amazon S3
+  - AWS Lambda
+  - Amazon API Gateway
+  - Amazon DynamoDB
+  - Amazon Cognito
+  - Amazon EventBridge Scheduler
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+  
+  TwitterBearerToken:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: Twitter API v2 Bearer Token (optional)
+
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 300
+    MemorySize: 512
+    Tracing: Active
+    Environment:
+      Variables:
+        ENVIRONMENT: !Ref Environment
+        S3_BUCKET: !Ref ContentBucket
+        SCHEDULE_TABLE: !Ref ScheduleTable
+        AWS_REGION_NAME: !Ref AWS::Region
+        TWITTER_BEARER_TOKEN: !Ref TwitterBearerToken
+    Layers:
+      - !Ref CommonLayer
+
+Resources:
+
+  # ─── S3 Bucket ────────────────────────────────────────────────
+
+  ContentBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'contentforge-${Environment}-${AWS::AccountId}'
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT, POST, DELETE, HEAD]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteTempUploads
+            Status: Enabled
+            Prefix: uploads/
+            ExpirationInDays: 7
+          - Id: DeleteTranscripts
+            Status: Enabled
+            Prefix: transcripts/
+            ExpirationInDays: 3
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # ─── DynamoDB Table ───────────────────────────────────────────
+
+  ScheduleTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub 'contentforge-schedules-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: platform
+          AttributeType: S
+        - AttributeName: date
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: platform-date-index
+          KeySchema:
+            - AttributeName: platform
+              KeyType: HASH
+            - AttributeName: date
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  # ─── Lambda Layers ────────────────────────────────────────────
+
+  CommonLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: contentforge-common
+      Description: Shared utilities for ContentForge Lambda functions
+      ContentUri: backend/layers/common/
+      CompatibleRuntimes:
+        - python3.11
+    Metadata:
+      BuildMethod: python3.11
+
+  # ─── IAM Role ────────────────────────────────────────────────
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'contentforge-lambda-role-${Environment}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+      Policies:
+        - PolicyName: ContentForgePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - comprehend:DetectSentiment
+                  - comprehend:DetectKeyPhrases
+                  - comprehend:DetectEntities
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - textract:StartDocumentTextDetection
+                  - textract:GetDocumentTextDetection
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - transcribe:StartTranscriptionJob
+                  - transcribe:GetTranscriptionJob
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:GeneratePresignedUrl
+                Resource:
+                  - !GetAtt ContentBucket.Arn
+                  - !Sub '${ContentBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Scan
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt ScheduleTable.Arn
+                  - !Sub '${ScheduleTable.Arn}/index/*'
+
+  # ─── Lambda Functions ─────────────────────────────────────────
+
+  IngestionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'contentforge-ingestion-${Environment}'
+      CodeUri: backend/lambdas/ingestion/
+      Handler: handler.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Description: Handles URL, PDF, and YouTube content ingestion
+      Events:
+        IngestURL:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ContentForgeAPI
+            Path: /ingest/url
+            Method: POST
+        IngestPDF:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ContentForgeAPI
+            Path: /ingest/pdf
+            Method: POST
+        IngestYoutube:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ContentForgeAPI
+            Path: /ingest/youtube
+            Method: POST
+        PresignUpload:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ContentForgeAPI
+            Path: /upload/presign
+            Method: POST
+        Health:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ContentForgeAPI
+            Path: /health
+            Method: GET
+
+  AnalyzeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'contentforge-analyze-${Environment}'
+      CodeUri: backend/lambdas/analyze/
+      Handler: handler.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Description: Amazon Comprehend + Bedrock content analysis
+      Timeout: 120
+      Events:
+        Analyze:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ContentForgeAPI
+            Path: /analyze
+            Method: POST
+
+  TransformFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'contentforge-transform-${Environment}'
+      CodeUri: backend/lambdas/transform/
+      Handler: handler.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Description: Comic, Meme, and Infographic generation with Bedrock SDXL
+      Timeout: 600
+      MemorySize: 1024
+      Events:
+        GenerateComic:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ContentForgeAPI
+            Path: /transform/comic
+            Method: POST
+        GenerateMeme:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ContentForgeAPI
+            Path: /transform/meme
+            Method: POST
+        GenerateInfographic:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ContentForgeAPI
+            Path: /transform/infographic
+            Method: POST
+
+  ScheduleFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'contentforge-schedule-${Environment}'
+      CodeUri: backend/lambdas/schedule/
+      Handler: handler.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Description: AI scheduling suggestions and Twitter distribution
+      Events:
+        SuggestSchedule:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ContentForgeAPI
+            Path: /schedule/suggest
+            Method: POST
+        CreateSchedule:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ContentForgeAPI
+            Path: /schedule/create
+            Method: POST
+        GetSchedule:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ContentForgeAPI
+            Path: /schedule
+            Method: GET
+        PostTwitter:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ContentForgeAPI
+            Path: /distribute/twitter
+            Method: POST
+
+  # ─── API Gateway ──────────────────────────────────────────────
+
+  ContentForgeAPI:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub 'ContentForge-API-${Environment}'
+      StageName: prod
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,x-aws-access-key,x-aws-secret-key,x-aws-session-token,x-aws-region,Authorization'"
+        AllowOrigin: "'*'"
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+
+  # ─── Cognito User Pool ────────────────────────────────────────
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub 'contentforge-users-${Environment}'
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: false
+          RequireLowercase: false
+          RequireNumbers: false
+          RequireSymbols: false
+      Schema:
+        - Name: email
+          AttributeDataType: String
+          Required: true
+          Mutable: true
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub 'contentforge-app-${Environment}'
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+      AccessTokenValidity: 24
+      IdTokenValidity: 24
+      RefreshTokenValidity: 30
+
+  # ─── Outputs ──────────────────────────────────────────────────
+
+Outputs:
+  ApiGatewayUrl:
+    Description: API Gateway Invoke URL — paste this into your frontend AWS config
+    Value: !Sub 'https://${ContentForgeAPI}.execute-api.${AWS::Region}.amazonaws.com/prod'
+    Export:
+      Name: !Sub 'ContentForgeApiUrl-${Environment}'
+
+  S3BucketName:
+    Description: S3 Bucket for uploads and generated assets
+    Value: !Ref ContentBucket
+
+  DynamoDBTable:
+    Description: DynamoDB table for schedules
+    Value: !Ref ScheduleTable
+
+  CognitoUserPoolId:
+    Description: Cognito User Pool ID — paste into frontend AWS config
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub 'ContentForgeUserPoolId-${Environment}'
+
+  CognitoClientId:
+    Description: Cognito App Client ID — paste into frontend AWS config
+    Value: !Ref UserPoolClient
