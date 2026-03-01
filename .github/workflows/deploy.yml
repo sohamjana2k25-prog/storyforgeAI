@@ -18,10 +18,11 @@ jobs:
       - name: Install SAM CLI
         run: pip install aws-sam-cli
 
-      - name: Prepare Lambda Layer
+      - name: Build Lambda Layer manually
         run: |
           mkdir -p backend/layers/common/python
-          cp backend/requirements.txt backend/layers/common/requirements.txt
+          pip install -r backend/requirements.txt -t backend/layers/common/python/
+          cp backend/layers/common/utils.py backend/layers/common/python/utils.py
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -31,7 +32,7 @@ jobs:
           aws-region: ap-south-1
 
       - name: SAM Build
-        run: sam build --template infrastructure/template.yaml
+        run: sam build --template infrastructure/template.yaml --skip-pull-image
 
       - name: SAM Deploy
         run: |
