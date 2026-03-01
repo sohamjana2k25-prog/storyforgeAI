@@ -56,9 +56,11 @@ def get_comprehend_client(region: str = None):
 
 
 def get_s3_client(region: str = None):
+    region = region or os.environ.get('AWS_REGION', 'ap-south-1')
     return boto3.client(
         's3',
-        region_name=region or os.environ.get('AWS_REGION', 'ap-south-1')
+        region_name=region,
+        endpoint_url=f'https://s3.{region}.amazonaws.com'
     )
 
 
