@@ -91,7 +91,7 @@ def invoke_claude(prompt: str, system: str = None, max_tokens: int = 4096) -> st
     """
     client = get_bedrock_client()
 
-    full_prompt = f"<s>[INST] {system}\n\n{prompt} [/INST]" if system else f"<s>[INST] {prompt} [/INST]"
+    full_prompt = f"<s>[INST] {system}\n\n{prompt}\n\nIMPORTANT: Return ONLY the JSON. No markdown, no explanation, no code fences. [/INST]" if system else f"<s>[INST] {prompt}\n\nIMPORTANT: Return ONLY the JSON. No markdown, no explanation, no code fences. [/INST]"
 
     body = {
         'prompt': full_prompt,
