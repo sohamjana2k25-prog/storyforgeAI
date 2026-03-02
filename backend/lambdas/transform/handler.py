@@ -101,15 +101,7 @@ Make the story flow: Setup Rising Action Conflict Resolution Punchline"""
             )
             negative = "realistic photo, blurry, low quality, nsfw, violent, distorted face"
 
-            try:
-                print(f"Generating image for panel {panel['panel_number']}...")
-                image_bytes = invoke_sdxl(image_prompt, negative, width, height)
-                s3_key = f'comics/{uuid.uuid4()}/panel_{panel["panel_number"]}.png'
-                image_url = upload_image_to_s3(image_bytes, s3_key, S3_BUCKET)
-                print(f"Panel {panel['panel_number']} image uploaded")
-            except Exception as img_err:
-                print(f"Image error panel {panel['panel_number']}: {str(img_err)}")
-                image_url = placeholder(width, height, f'Panel+{panel["panel_number"]}')
+            image_url = placeholder(width, height, f'Panel+{panel["panel_number"]}')
 
             frames.append({
                 'panel_number': panel['panel_number'],
