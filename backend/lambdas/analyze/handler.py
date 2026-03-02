@@ -106,6 +106,7 @@ Return a JSON object with EXACTLY these fields (no extra text, just JSON):
             cleaned = re.sub(r'^```\s*', '', cleaned)
             cleaned = re.sub(r'```\s*$', '', cleaned)
             cleaned = cleaned.strip()
+            cleaned = cleaned.replace('\t', '  ')
 
             json_match = re.search(r'\{[\s\S]*\}', cleaned)
             if json_match:
