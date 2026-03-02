@@ -86,35 +86,29 @@ def get_dynamodb_resource(region: str = None):
 
 def invoke_claude(prompt: str, system: str = None, max_tokens: int = 4096) -> str:
     """
-    Invoke Amazon Nova Pro via Amazon Bedrock.
-    Native AWS model - no payment instrument needed.
+    Invoke Mistral 7B Instruct via Amazon Bedrock.
+    Available in ap-south-1, no payment instrument needed.
     """
     client = get_bedrock_client()
 
-    messages = [{'role': 'user', 'content': [{'text': prompt}]}]
+    full_prompt = f"<s>[INST] {system}\n\n{prompt} [/INST]" if system else f"<s>[INST] {prompt} [/INST]"
 
     body = {
-        'messages': messages,
-        'inferenceConfig': {
-            'maxTokens': max_tokens,
-            'temperature': 0.7,
-            'topP': 0.9,
-        }
+        'prompt': full_prompt,
+        'max_tokens': max_tokens,
+        'temperature': 0.7,
+        'top_p': 0.9,
     }
 
-    if system:
-        body['system'] = [{'text': system}]
-
     resp = client.invoke_model(
-        modelId='ap-south-1.amazon.nova-pro-v1:0',
+        modelId='mistral.mistral-7b-instruct-v0:2',
         body=json.dumps(body),
         contentType='application/json',
         accept='application/json',
     )
 
     result = json.loads(resp['body'].read())
-    return result['output']['message']['content'][0]['text']
-
+    return result['outputs'][0]['text']
 
 def invoke_sdxl(prompt: str, negative_prompt: str = '', width: int = 1024, height: int = 1024) -> bytes:
     """
