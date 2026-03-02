@@ -106,7 +106,7 @@ def invoke_claude(prompt: str, system: str = None, max_tokens: int = 4096) -> st
         body['system'] = [{'text': system}]
 
     resp = client.invoke_model(
-        modelId='amazon.nova-pro-v1:0',
+        modelId='ap-south-1.amazon.nova-pro-v1:0',
         body=json.dumps(body),
         contentType='application/json',
         accept='application/json',
