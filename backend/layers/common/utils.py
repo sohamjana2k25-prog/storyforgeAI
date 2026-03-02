@@ -116,7 +116,7 @@ def invoke_sdxl(prompt: str, negative_prompt: str = '', width: int = 1024, heigh
     Native AWS model - no payment instrument needed.
     """
     import base64
-    client = get_bedrock_client()
+    client = get_bedrock_client(region='us-east-1')
 
     # Titan only supports these exact sizes
     TITAN_SIZES = [512, 768, 1024]
