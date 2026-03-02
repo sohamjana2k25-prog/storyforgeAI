@@ -207,110 +207,62 @@ def generate_infographic(event):
     print("generate_infographic started")
     try:
         body = json.loads(event.get('body', '{}'))
-        data_points = body.get('data_points', [])
         key_themes = body.get('key_themes', [])
+        data_points = body.get('data_points', [])
         sentiment = body.get('sentiment', 'professional')
         word_limit = int(body.get('word_limit', 200))
-        dimensions = body.get('dimensions', '1080x1080')
         platform = body.get('platform', 'linkedin')
 
-        # 1. IMPROVED PROMPT: Enforces strict JSON formatting
-        content_prompt = f"""You are a JSON generator. output ONLY valid JSON.
-Create a professional infographic content structure for {platform}.
+        print("Calling Mistral for LinkedIn post...")
+        content_prompt = f"""Write a professional LinkedIn post based on this content analysis.
 
-Context:
-- Themes: {key_themes}
-- Data: {data_points}
-- Tone: {sentiment}
+Key themes: {key_themes}
+Data points: {data_points}
+Tone: {sentiment}
+Word limit: {word_limit} words
 
-Return a JSON object with this EXACT structure (ensure all keys are quoted and list items separated by commas):
+Return a JSON object:
 {{
-  "title": "Headline string",
-  "subtitle": "Subtitle string",
-  "sections": [
-    {{
-      "heading": "Section heading",
-      "body": "Section body text",
-      "stat": "Key statistic string"
-    }}
-  ],
-  "call_to_action": "CTA text",
-  "image_prompt": "Visual description for SDXL"
+  "title": "Attention-grabbing opening line",
+  "body": "Main LinkedIn post body with line breaks using \\n. Include key insights, data points, and a call to action. Use emojis sparingly.",
+  "hashtags": ["#hashtag1", "#hashtag2", "#hashtag3", "#hashtag4", "#hashtag5"],
+  "hook": "One-line hook to use as preview text",
+  "cta": "Call to action at the end"
 }}"""
 
-        print("Calling LLM for infographic content...")
-        # Add 'system' parameter to force JSON mode if your invoke_claude supports it
-        content_response = invoke_claude(content_prompt, system="Output strictly valid JSON only. Check for missing commas.")
-        print(f"LLM Response: {content_response[:100]}...") # Log first 100 chars to debug
+        response = invoke_claude(content_prompt, system="You are a LinkedIn content expert. Return valid JSON only. No markdown, no backticks.")
+        print(f"Mistral response length: {len(response)}")
 
-        # 2. ROBUST PARSING: Cleans markdown and handles errors
-        try:
-            # Remove markdown code blocks (```json ... ```)
-            cleaned_json = re.sub(r'```json\s*|\s*```', '', content_response).strip()
-            # Find the first { and last } to ignore preamble text
-            match = re.search(r'\{.*\}', cleaned_json, re.DOTALL)
-            if match:
-                cleaned_json = match.group(0)
-            
-            infographic_content = json.loads(cleaned_json)
-            print("Infographic content parsed successfully")
-            
-        except json.JSONDecodeError as je:
-            print(f"JSON Parsing Failed: {je}")
-            print(f"Bad JSON: {content_response}")
-            # Fallback content so the app doesn't crash
-            infographic_content = {
-                "title": "Content Generated",
-                "subtitle": "Visual Repurposing",
-                "sections": [],
-                "image_prompt": "A professional business infographic, clean vector style",
-                "call_to_action": "Read more"
+        cleaned = response.strip()
+        cleaned = re.sub(r'^```json\s*', '', cleaned)
+        cleaned = re.sub(r'^```\s*', '', cleaned)
+        cleaned = re.sub(r'```\s*$', '', cleaned)
+        cleaned = cleaned.strip()
+
+        json_match = re.search(r'\{[\s\S]*\}', cleaned)
+        if json_match:
+            content = json.loads(json_match.group())
+            print("LinkedIn post JSON parsed successfully")
+        else:
+            content = {
+                'title': 'Key Insights',
+                'body': '\n'.join([str(t) for t in key_themes]),
+                'hashtags': ['#LinkedIn', '#Insights'],
+                'hook': 'Here are the key takeaways',
+                'cta': 'What do you think? Share your thoughts below.',
             }
 
-        width, height = 1024, 1024
-        sentiment_style = {
-            'professional': 'corporate clean design blue white palette minimal',
-            'inspirational': 'vibrant warm colors bold typography motivational',
-            'urgent': 'high contrast red accents bold design attention-grabbing',
-            'neutral': 'neutral tones balanced layout clean design',
-        }.get(sentiment, 'professional')
-
-        image_prompt = (
-            f"{infographic_content.get('image_prompt', 'data visualization infographic')}, "
-            f"{sentiment_style}, "
-            f"professional infographic design, data visualization, "
-            f"modern business design, high quality"
-        )
-
-        try:
-            print(f"Generating infographic image...")
-            image_bytes = invoke_sdxl(image_prompt, width=width, height=height)
-            s3_key = f'infographics/{uuid.uuid4()}.png'
-            image_url = upload_image_to_s3(image_bytes, s3_key, S3_BUCKET)
-            print("Infographic image uploaded to S3")
-        except Exception as img_err:
-            print(f"Infographic image error: {str(img_err)}")
-            image_url = placeholder(1024, 1024, 'Infographic', 'b8ff57')
-
+        print("Infographic (LinkedIn post) done")
         return ok({
-            'image_url': image_url,
-            'content': infographic_content,
-            'dimensions': dimensions,
+            'type': 'linkedin_post',
+            'content': content,
             'platform': platform,
         })
 
     except Exception as e:
         print(f"Infographic error: {str(e)}")
         print(traceback.format_exc())
-        return error(f'Infographic generation failed: {str(e)}')
-
-
-ROUTE_MAP = {
-    ('POST', '/transform/comic'):         generate_comic,
-    ('POST', '/transform/meme'):          generate_meme,
-    ('POST', '/transform/infographic'):   generate_infographic,
-}
-
+        return error(f'LinkedIn post generation failed: {str(e)}')
 
 def lambda_handler(event, context):
     print(f"Event: {json.dumps(event)}")
