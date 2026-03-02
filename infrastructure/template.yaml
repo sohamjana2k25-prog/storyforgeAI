@@ -32,8 +32,8 @@ Parameters:
 Globals:
   Function:
     Runtime: python3.11
-    Timeout: 300
-    MemorySize: 512
+    Timeout: 600
+    MemorySize: 2048
     Tracing: Active
     Environment:
       Variables:
