@@ -15,12 +15,11 @@ import json
 import os
 import re
 import uuid
-from utils import ok, error, handle_options, invoke_claude, invoke_sdxl, upload_image_to_s3, get_s3_client
 import traceback
+from utils import ok, error, handle_options, invoke_claude, invoke_sdxl, upload_image_to_s3, get_s3_client
 
 S3_BUCKET = os.environ.get('S3_BUCKET', '')
 
-# Style presets for SDXL
 ART_STYLE_PROMPTS = {
     'anime': 'anime style, manga, high quality illustration, vibrant colors, detailed linework',
     'minimalist': 'minimalist style, clean lines, flat design, simple shapes, white space',
@@ -38,9 +37,8 @@ ORIENTATION_SIZES = {
 }
 
 
-# ─── Pipeline A: Comic Generation ────────────────────────────────
-
 def generate_comic(event):
+    print("generate_comic started")
     try:
         body = json.loads(event.get('body', '{}'))
         script = body.get('script', '')
@@ -50,7 +48,6 @@ def generate_comic(event):
         character_desc = body.get('character_description', 'A young professional')
         num_frames = min(int(body.get('frames', 10)), 12)
 
-        # Step 1: Generate comic script with Claude
         tone_desc = 'humorous and casual' if brand_tone > 60 else 'professional and serious' if brand_tone < 30 else 'balanced'
 
         script_prompt = f"""Create a {num_frames}-panel comic strip script based on this content:
@@ -75,20 +72,22 @@ Return a JSON array of {num_frames} panels:
 
 Make the story flow: Setup → Rising Action → Conflict → Resolution → Punchline"""
 
+        print("Calling Claude for comic script...")
         script_response = invoke_claude(script_prompt, system="Return valid JSON array only.")
+        print(f"Claude response length: {len(script_response)}")
+        
         json_match = re.search(r'\[[\s\S]*\]', script_response)
         if not json_match:
             return error('Failed to generate comic script')
 
         panels_script = json.loads(json_match.group())
+        print(f"Parsed {len(panels_script)} panels")
 
-        # Step 2: Generate images for each panel with SDXL
         style_prompt = ART_STYLE_PROMPTS.get(art_style, ART_STYLE_PROMPTS['flat'])
         width, height = ORIENTATION_SIZES.get(orientation, (1024, 1024))
 
         frames = []
         for panel in panels_script[:num_frames]:
-            # Build SDXL prompt
             image_prompt = (
                 f"{panel['scene_description']}, "
                 f"character: {character_desc}, "
@@ -101,11 +100,13 @@ Make the story flow: Setup → Rising Action → Conflict → Resolution → Pun
             negative = "realistic photo, blurry, low quality, nsfw, violent, distorted face"
 
             try:
+                print(f"Generating image for panel {panel['panel_number']}...")
                 image_bytes = invoke_sdxl(image_prompt, negative, width, height)
                 s3_key = f'comics/{uuid.uuid4()}/panel_{panel["panel_number"]}.png'
                 image_url = upload_image_to_s3(image_bytes, s3_key, S3_BUCKET)
+                print(f"Panel {panel['panel_number']} done")
             except Exception as img_err:
-                # Fallback: use placeholder
+                print(f"Image error panel {panel['panel_number']}: {str(img_err)}")
                 image_url = f'https://via.placeholder.com/{width}x{height}/0a0d14/00e5ff?text=Panel+{panel["panel_number"]}'
 
             frames.append({
@@ -116,15 +117,17 @@ Make the story flow: Setup → Rising Action → Conflict → Resolution → Pun
                 'scene_description': panel.get('scene_description', ''),
             })
 
+        print(f"Comic done, {len(frames)} frames")
         return ok({'frames': frames, 'style': art_style, 'orientation': orientation})
 
     except Exception as e:
+        print(f"Comic error: {str(e)}")
+        print(traceback.format_exc())
         return error(f'Comic generation failed: {str(e)}')
 
 
-# ─── Pipeline B: Meme Generation ─────────────────────────────────
-
 def generate_meme(event):
+    print("generate_meme started")
     try:
         body = json.loads(event.get('body', '{}'))
         content_analysis = body.get('content_analysis', {})
@@ -137,7 +140,6 @@ def generate_meme(event):
         core_conflict = content_analysis.get('core_conflict', '')
         quotables = content_analysis.get('quotable_moments', [])
 
-        # Step 1: Generate meme concepts with Claude
         meme_prompt = f"""Create {count} meme concepts for this content:
 
 Content angle: {meme_potential}
@@ -159,14 +161,17 @@ Return a JSON array of {count} meme objects:
   }}
 ]"""
 
+        print("Calling Claude for meme concepts...")
         meme_response = invoke_claude(meme_prompt, system="Return valid JSON array only.")
+        print(f"Claude meme response length: {len(meme_response)}")
+        
         json_match = re.search(r'\[[\s\S]*\]', meme_response)
         if not json_match:
             return error('Failed to generate meme concepts')
 
         meme_concepts = json.loads(json_match.group())
+        print(f"Parsed {len(meme_concepts)} meme concepts")
 
-        # Step 2: Generate images for each meme
         memes = []
         for concept in meme_concepts[:count]:
             image_prompt = (
@@ -176,10 +181,13 @@ Return a JSON array of {count} meme objects:
             )
 
             try:
+                print(f"Generating meme image {len(memes)+1}...")
                 image_bytes = invoke_sdxl(image_prompt, width=1024, height=1024)
                 s3_key = f'memes/{uuid.uuid4()}.png'
                 image_url = upload_image_to_s3(image_bytes, s3_key, S3_BUCKET)
-            except Exception:
+                print(f"Meme image {len(memes)+1} done")
+            except Exception as img_err:
+                print(f"Meme image error: {str(img_err)}")
                 image_url = 'https://via.placeholder.com/1024x1024/0a0d14/ff6b35?text=Meme'
 
             memes.append({
@@ -192,15 +200,17 @@ Return a JSON array of {count} meme objects:
                 'format': concept.get('format', 'classic'),
             })
 
+        print(f"Meme done, {len(memes)} memes")
         return ok({'memes': memes})
 
     except Exception as e:
+        print(f"Meme error: {str(e)}")
+        print(traceback.format_exc())
         return error(f'Meme generation failed: {str(e)}')
 
 
-# ─── Pipeline C: Infographic Generation ──────────────────────────
-
 def generate_infographic(event):
+    print("generate_infographic started")
     try:
         body = json.loads(event.get('body', '{}'))
         data_points = body.get('data_points', [])
@@ -210,7 +220,6 @@ def generate_infographic(event):
         dimensions = body.get('dimensions', '1080x1080')
         platform = body.get('platform', 'linkedin')
 
-        # Step 1: Create infographic content plan with Claude
         content_prompt = f"""Create a professional infographic for {platform}.
 
 Key themes: {key_themes}
@@ -236,19 +245,20 @@ Return a JSON object:
   "image_prompt": "Detailed SDXL prompt for the infographic visual"
 }}"""
 
+        print("Calling Claude for infographic content...")
         content_response = invoke_claude(content_prompt, system="Return valid JSON only.")
+        print(f"Claude infographic response length: {len(content_response)}")
+        
         json_match = re.search(r'\{[\s\S]*\}', content_response)
         if not json_match:
             return error('Failed to generate infographic content')
 
         infographic_content = json.loads(json_match.group())
+        print("Infographic content parsed")
 
-        # Step 2: Generate infographic image with SDXL
         width_str, height_str = dimensions.split('x') if 'x' in dimensions else ('1080', '1080')
         width = min(1344, int(int(width_str) * 1024 / 1080))
         height = min(1344, int(int(height_str) * 1024 / 1080))
-
-        # Round to nearest 64 (SDXL requirement)
         width = round(width / 64) * 64
         height = round(height / 64) * 64
 
@@ -268,12 +278,16 @@ Return a JSON object:
         )
 
         try:
+            print(f"Generating infographic image, size: {width}x{height}...")
             image_bytes = invoke_sdxl(image_prompt, width=width, height=height)
             s3_key = f'infographics/{uuid.uuid4()}.png'
             image_url = upload_image_to_s3(image_bytes, s3_key, S3_BUCKET)
-        except Exception:
+            print("Infographic image uploaded to S3")
+        except Exception as img_err:
+            print(f"Infographic image error: {str(img_err)}")
             image_url = 'https://via.placeholder.com/1080x1080/0a0d14/b8ff57?text=Infographic'
 
+        print("Infographic done")
         return ok({
             'image_url': image_url,
             'content': infographic_content,
@@ -282,10 +296,10 @@ Return a JSON object:
         })
 
     except Exception as e:
+        print(f"Infographic error: {str(e)}")
+        print(traceback.format_exc())
         return error(f'Infographic generation failed: {str(e)}')
 
-
-# ─── Lambda Handler ───────────────────────────────────────────────
 
 ROUTE_MAP = {
     ('POST', '/transform/comic'):        generate_comic,
@@ -296,9 +310,10 @@ ROUTE_MAP = {
 
 def lambda_handler(event, context):
     try:
-        print(f"Transform handler started")
+        print("Transform handler started")
         method = event.get('httpMethod', 'GET')
         path = event.get('path', '/')
+        print(f"Method: {method}, Path: {path}")
 
         if method == 'OPTIONS':
             return handle_options()
@@ -307,9 +322,12 @@ def lambda_handler(event, context):
         if not handler_fn:
             return error(f'Route not found: {method} {path}', 404)
 
-        return handler_fn(event)
+        print(f"Calling: {handler_fn.__name__}")
+        result = handler_fn(event)
+        print(f"Result status: {result.get('statusCode')}")
+        return result
 
     except Exception as e:
-        print(f"FATAL ERROR: {str(e)}")
+        print(f"FATAL: {str(e)}")
         print(traceback.format_exc())
         return error(f'Fatal error: {str(e)}')
