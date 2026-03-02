@@ -6,8 +6,8 @@ POST /transform/meme        → Pipeline B: Viral Visuals (Memes)
 POST /transform/infographic → Pipeline C: Professional Visuals (Infographics)
 
 Uses:
-  - Amazon Bedrock (Claude 3 Sonnet): Script & prompt generation
-  - Amazon Bedrock (SDXL): Image generation
+  - Mistral 7B: Script & prompt generation
+  - Amazon Titan Image Generator: Image generation
   - Amazon S3: Store generated images
 """
 
@@ -16,7 +16,8 @@ import os
 import re
 import uuid
 import traceback
-from utils import ok, error, handle_options, invoke_claude, invoke_sdxl, upload_image_to_s3, get_s3_client
+from utils import (ok, error, handle_options, invoke_claude, invoke_sdxl,
+                   upload_image_to_s3, get_s3_client)
 
 S3_BUCKET = os.environ.get('S3_BUCKET', '')
 
@@ -29,12 +30,15 @@ ART_STYLE_PROMPTS = {
     'corporate': 'professional corporate illustration, clean business style, neutral colors',
 }
 
-ORIENTATION_SIZES = {
-    'square': (1024, 1024),
-    'portrait': (768, 1344),
-    'landscape': (1344, 768),
-    'strip': (1344, 448),
-}
+TITAN_SIZES = [512, 768, 1024]
+
+def get_titan_size(width, height):
+    w = min(TITAN_SIZES, key=lambda x: abs(x - width))
+    h = min(TITAN_SIZES, key=lambda x: abs(x - height))
+    return w, h
+
+def placeholder(width, height, text, color='00e5ff'):
+    return f'https://placehold.co/{width}x{height}/0a0d14/{color}?text={text}'
 
 
 def generate_comic(event):
@@ -64,18 +68,17 @@ Return a JSON array of {num_frames} panels:
     "scene_description": "Visual description of what to draw in this panel",
     "caption": "Narrative caption (1-2 sentences)",
     "dialogue": "Character dialogue (or null if no dialogue)",
-    "emotion": "Character's emotion in this panel",
+    "emotion": "Character emotion in this panel",
     "background": "Brief background description"
-  }},
-  ...
+  }}
 ]
 
-Make the story flow: Setup → Rising Action → Conflict → Resolution → Punchline"""
+Make the story flow: Setup Rising Action Conflict Resolution Punchline"""
 
-        print("Calling Claude for comic script...")
-        script_response = invoke_claude(script_prompt, system="Return valid JSON array only.")
-        print(f"Claude response length: {len(script_response)}")
-        
+        print("Calling LLM for comic script...")
+        script_response = invoke_claude(script_prompt, system="Return valid JSON array only. No extra text.")
+        print(f"LLM response length: {len(script_response)}")
+
         json_match = re.search(r'\[[\s\S]*\]', script_response)
         if not json_match:
             return error('Failed to generate comic script')
@@ -84,7 +87,7 @@ Make the story flow: Setup → Rising Action → Conflict → Resolution → Pun
         print(f"Parsed {len(panels_script)} panels")
 
         style_prompt = ART_STYLE_PROMPTS.get(art_style, ART_STYLE_PROMPTS['flat'])
-        width, height = ORIENTATION_SIZES.get(orientation, (1024, 1024))
+        width, height = 1024, 1024
 
         frames = []
         for panel in panels_script[:num_frames]:
@@ -96,7 +99,6 @@ Make the story flow: Setup → Rising Action → Conflict → Resolution → Pun
                 f"{style_prompt}, "
                 f"comic panel, high quality, detailed"
             )
-
             negative = "realistic photo, blurry, low quality, nsfw, violent, distorted face"
 
             try:
@@ -104,10 +106,10 @@ Make the story flow: Setup → Rising Action → Conflict → Resolution → Pun
                 image_bytes = invoke_sdxl(image_prompt, negative, width, height)
                 s3_key = f'comics/{uuid.uuid4()}/panel_{panel["panel_number"]}.png'
                 image_url = upload_image_to_s3(image_bytes, s3_key, S3_BUCKET)
-                print(f"Panel {panel['panel_number']} done")
+                print(f"Panel {panel['panel_number']} image uploaded")
             except Exception as img_err:
                 print(f"Image error panel {panel['panel_number']}: {str(img_err)}")
-                image_url = f'https://via.placeholder.com/{width}x{height}/0a0d14/00e5ff?text=Panel+{panel["panel_number"]}'
+                image_url = placeholder(width, height, f'Panel+{panel["panel_number"]}')
 
             frames.append({
                 'panel_number': panel['panel_number'],
@@ -146,25 +148,25 @@ Content angle: {meme_potential}
 Core conflict: {core_conflict}
 Key quotes: {quotables[:3]}
 Platform: {platform}
-Brand persona: {brand_persona} (GenZ = max humor/chaos, Professional = subtle wit)
+Brand persona: {brand_persona}
 Tone: {tone}
 
 Return a JSON array of {count} meme objects:
 [
   {{
-    "top_text": "Impact font top text (MAX 8 words, ALL CAPS)",
-    "bottom_text": "Punchline bottom text (MAX 8 words, ALL CAPS)",
-    "image_concept": "Describe what the meme image shows (for image generation)",
-    "format": "classic|drake|distracted|expanding_brain",
-    "caption": "Tweet caption to post with this meme (max 240 chars)",
-    "hashtags": ["#relevant", "#hashtags"]
+    "top_text": "Impact font top text MAX 8 words ALL CAPS",
+    "bottom_text": "Punchline bottom text MAX 8 words ALL CAPS",
+    "image_concept": "Describe what the meme image shows",
+    "format": "classic",
+    "caption": "Tweet caption max 240 chars",
+    "hashtags": ["#relevant"]
   }}
 ]"""
 
-        print("Calling Claude for meme concepts...")
-        meme_response = invoke_claude(meme_prompt, system="Return valid JSON array only.")
-        print(f"Claude meme response length: {len(meme_response)}")
-        
+        print("Calling LLM for meme concepts...")
+        meme_response = invoke_claude(meme_prompt, system="Return valid JSON array only. No extra text.")
+        print(f"LLM meme response length: {len(meme_response)}")
+
         json_match = re.search(r'\[[\s\S]*\]', meme_response)
         if not json_match:
             return error('Failed to generate meme concepts')
@@ -185,10 +187,10 @@ Return a JSON array of {count} meme objects:
                 image_bytes = invoke_sdxl(image_prompt, width=1024, height=1024)
                 s3_key = f'memes/{uuid.uuid4()}.png'
                 image_url = upload_image_to_s3(image_bytes, s3_key, S3_BUCKET)
-                print(f"Meme image {len(memes)+1} done")
+                print(f"Meme image {len(memes)+1} uploaded")
             except Exception as img_err:
                 print(f"Meme image error: {str(img_err)}")
-                image_url = 'https://via.placeholder.com/1024x1024/0a0d14/ff6b35?text=Meme'
+                image_url = placeholder(1024, 1024, 'Meme', 'ff6b35')
 
             memes.append({
                 'id': len(memes) + 1,
@@ -226,29 +228,26 @@ Key themes: {key_themes}
 Data points: {data_points}
 Sentiment: {sentiment}
 Word limit: {word_limit}
-Dimensions: {dimensions}
 
 Return a JSON object:
 {{
-  "title": "Headline (max 8 words)",
-  "subtitle": "Supporting line (max 12 words)",
+  "title": "Headline max 8 words",
+  "subtitle": "Supporting line max 12 words",
   "sections": [
     {{
       "heading": "Section heading",
-      "body": "Section body (max {word_limit // 3} words)",
-      "stat": "Key statistic (optional)"
+      "body": "Section body",
+      "stat": "Key statistic"
     }}
   ],
   "call_to_action": "CTA text",
-  "color_scheme": "describe 3 hex colors that match {sentiment} tone",
-  "layout_description": "Describe the infographic layout for image generation",
-  "image_prompt": "Detailed SDXL prompt for the infographic visual"
+  "image_prompt": "Detailed prompt for infographic visual"
 }}"""
 
-        print("Calling Claude for infographic content...")
-        content_response = invoke_claude(content_prompt, system="Return valid JSON only.")
-        print(f"Claude infographic response length: {len(content_response)}")
-        
+        print("Calling LLM for infographic content...")
+        content_response = invoke_claude(content_prompt, system="Return valid JSON only. No extra text.")
+        print(f"LLM infographic response length: {len(content_response)}")
+
         json_match = re.search(r'\{[\s\S]*\}', content_response)
         if not json_match:
             return error('Failed to generate infographic content')
@@ -256,37 +255,31 @@ Return a JSON object:
         infographic_content = json.loads(json_match.group())
         print("Infographic content parsed")
 
-        # Titan supported sizes only
-        TITAN_SIZES = [512, 768, 1024]
-        target_w = int(width_str)
-        target_h = int(height_str)
-        width = min(TITAN_SIZES, key=lambda x: abs(x - target_w))
-        height = min(TITAN_SIZES, key=lambda x: abs(x - target_h))
+        width, height = 1024, 1024
 
         sentiment_style = {
-            'professional': 'corporate, clean design, blue and white palette, minimal',
-            'inspirational': 'vibrant, warm colors, bold typography, motivational',
-            'urgent': 'high contrast, red accents, bold design, attention-grabbing',
-            'neutral': 'neutral tones, balanced layout, clean design',
+            'professional': 'corporate clean design blue white palette minimal',
+            'inspirational': 'vibrant warm colors bold typography motivational',
+            'urgent': 'high contrast red accents bold design attention-grabbing',
+            'neutral': 'neutral tones balanced layout clean design',
         }.get(sentiment, 'professional')
 
         image_prompt = (
             f"{infographic_content.get('image_prompt', 'data visualization infographic')}, "
             f"{sentiment_style}, "
             f"professional infographic design, data visualization, "
-            f"title: {infographic_content['title']}, "
             f"modern business design, high quality"
         )
 
         try:
-            print(f"Generating infographic image, size: {width}x{height}...")
+            print(f"Generating infographic image...")
             image_bytes = invoke_sdxl(image_prompt, width=width, height=height)
             s3_key = f'infographics/{uuid.uuid4()}.png'
             image_url = upload_image_to_s3(image_bytes, s3_key, S3_BUCKET)
             print("Infographic image uploaded to S3")
         except Exception as img_err:
             print(f"Infographic image error: {str(img_err)}")
-            image_url = 'https://via.placeholder.com/1080x1080/0a0d14/b8ff57?text=Infographic'
+            image_url = placeholder(1024, 1024, 'Infographic', 'b8ff57')
 
         print("Infographic done")
         return ok({
@@ -310,25 +303,16 @@ ROUTE_MAP = {
 
 
 def lambda_handler(event, context):
-    try:
-        print("Transform handler started")
-        method = event.get('httpMethod', 'GET')
-        path = event.get('path', '/')
-        print(f"Method: {method}, Path: {path}")
+    print(f"Event: {json.dumps(event)}")
 
-        if method == 'OPTIONS':
-            return handle_options()
+    method = event.get('httpMethod', 'GET')
+    path = event.get('path', '/')
 
-        handler_fn = ROUTE_MAP.get((method, path))
-        if not handler_fn:
-            return error(f'Route not found: {method} {path}', 404)
+    if method == 'OPTIONS':
+        return handle_options()
 
-        print(f"Calling: {handler_fn.__name__}")
-        result = handler_fn(event)
-        print(f"Result status: {result.get('statusCode')}")
-        return result
+    handler_fn = ROUTE_MAP.get((method, path))
+    if not handler_fn:
+        return error(f'Route not found: {method} {path}', 404)
 
-    except Exception as e:
-        print(f"FATAL: {str(e)}")
-        print(traceback.format_exc())
-        return error(f'Fatal error: {str(e)}')
+    return handler_fn(event)
