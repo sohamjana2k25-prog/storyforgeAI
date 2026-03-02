@@ -212,7 +212,14 @@ def presign_upload(event):
         content_type = body.get('content_type', 'application/pdf')
 
         s3_key = f'{UPLOADS_PREFIX}{uuid.uuid4()}/{filename}'
-        s3 = get_s3_client()
+        
+        # Force regional endpoint to fix CORS
+        region = os.environ.get('AWS_REGION', 'ap-south-1')
+        s3 = boto3.client(
+            's3',
+            region_name=region,
+            endpoint_url=f'https://s3.{region}.amazonaws.com'
+        )
 
         upload_url = s3.generate_presigned_url(
             'put_object',
@@ -221,14 +228,13 @@ def presign_upload(event):
                 'Key': s3_key,
                 'ContentType': content_type,
             },
-            ExpiresIn=900,  # 15 minutes
+            ExpiresIn=900,
         )
 
         return ok({'upload_url': upload_url, 's3_key': s3_key})
 
     except Exception as e:
         return error(f'Presign failed: {str(e)}')
-
 
 # ─── Health Check ─────────────────────────────────────────────────
 
