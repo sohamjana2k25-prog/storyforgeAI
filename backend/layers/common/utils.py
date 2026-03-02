@@ -86,36 +86,48 @@ def get_dynamodb_resource(region: str = None):
 
 def invoke_claude(prompt: str, system: str = None, max_tokens: int = 4096) -> str:
     """
-    Invoke Claude 3 Sonnet via Amazon Bedrock.
+    Invoke Amazon Nova Pro via Amazon Bedrock.
+    Native AWS model - no payment instrument needed.
     """
     client = get_bedrock_client()
 
-    messages = [{'role': 'user', 'content': prompt}]
+    messages = [{'role': 'user', 'content': [{'text': prompt}]}]
+
     body = {
-        'anthropic_version': 'bedrock-2023-05-31',
-        'max_tokens': max_tokens,
         'messages': messages,
+        'inferenceConfig': {
+            'maxTokens': max_tokens,
+            'temperature': 0.7,
+            'topP': 0.9,
+        }
     }
+
     if system:
-        body['system'] = system
+        body['system'] = [{'text': system}]
 
     resp = client.invoke_model(
-        modelId='anthropic.claude-3-sonnet-20240229-v1:0',
+        modelId='amazon.nova-pro-v1:0',
         body=json.dumps(body),
         contentType='application/json',
         accept='application/json',
     )
 
     result = json.loads(resp['body'].read())
-    return result['content'][0]['text']
+    return result['output']['message']['content'][0]['text']
 
 
 def invoke_sdxl(prompt: str, negative_prompt: str = '', width: int = 1024, height: int = 1024) -> bytes:
     """
     Invoke Titan Image Generator via Amazon Bedrock.
+    Native AWS model - no payment instrument needed.
     """
     import base64
     client = get_bedrock_client()
+
+    # Titan only supports these exact sizes
+    TITAN_SIZES = [512, 768, 1024]
+    width = min(TITAN_SIZES, key=lambda x: abs(x - width))
+    height = min(TITAN_SIZES, key=lambda x: abs(x - height))
 
     body = {
         'taskType': 'TEXT_IMAGE',
@@ -125,8 +137,8 @@ def invoke_sdxl(prompt: str, negative_prompt: str = '', width: int = 1024, heigh
         },
         'imageGenerationConfig': {
             'numberOfImages': 1,
-            'width': min(width, 1024),
-            'height': min(height, 1024),
+            'width': width,
+            'height': height,
             'cfgScale': 8.0,
         }
     }
