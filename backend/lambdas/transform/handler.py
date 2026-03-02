@@ -256,11 +256,12 @@ Return a JSON object:
         infographic_content = json.loads(json_match.group())
         print("Infographic content parsed")
 
-        width_str, height_str = dimensions.split('x') if 'x' in dimensions else ('1080', '1080')
-        width = min(1344, int(int(width_str) * 1024 / 1080))
-        height = min(1344, int(int(height_str) * 1024 / 1080))
-        width = round(width / 64) * 64
-        height = round(height / 64) * 64
+        # Titan supported sizes only
+        TITAN_SIZES = [512, 768, 1024]
+        target_w = int(width_str)
+        target_h = int(height_str)
+        width = min(TITAN_SIZES, key=lambda x: abs(x - target_w))
+        height = min(TITAN_SIZES, key=lambda x: abs(x - target_h))
 
         sentiment_style = {
             'professional': 'corporate, clean design, blue and white palette, minimal',
