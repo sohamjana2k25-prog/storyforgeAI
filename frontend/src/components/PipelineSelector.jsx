@@ -57,7 +57,7 @@ function PipelineCard({ id, label, color, icon, desc, enabled, onToggle, childre
 export default function PipelineSelector({ persona, analysis, onComplete }) {
   const [pipelines, setPipelines] = useState({ comic: true, meme: false, infographic: true })
   const [comicOrientation, setComicOrientation] = useState('square')
-  const [comicFrames, setComicFrames] = useState(10)
+  const [comicFrames, setComicFrames] = useState(4)
   const [memeStyle, setMemeStyle] = useState('custom')
   const [memeCount, setMemeCount] = useState(3)
   const [infographicType, setInfographicType] = useState('stats')
