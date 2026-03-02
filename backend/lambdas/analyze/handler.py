@@ -23,7 +23,8 @@ def analyze_content(event):
         # ── Step 1: Amazon Comprehend ─────────────────────────────
         try:
             comprehend = get_comprehend_client()
-            comprehend_text = text[:4900]
+            # Fix: encode to bytes and truncate to 4900 bytes not chars
+            comprehend_text = text.encode('utf-8')[:4900].decode('utf-8', errors='ignore')
 
             sentiment_resp = comprehend.detect_sentiment(
                 Text=comprehend_text,
@@ -64,9 +65,9 @@ def analyze_content(event):
             key_phrase_texts = []
             entities = []
 
-        # ── Step 2: Amazon Bedrock (Claude 3) ────────────────────
+        # ── Step 2: Mistral via Bedrock ───────────────────────────
         try:
-            text_for_claude = text[:15000] if len(text) > 15000 else text
+            text_for_claude = text[:8000] if len(text) > 8000 else text
 
             analysis_prompt = f"""Analyze the following content and extract structured insights.
 Target audience: {target_audience}
@@ -92,22 +93,29 @@ Return a JSON object with EXACTLY these fields (no extra text, just JSON):
   "comic_storyline": "a 3-act structure for a comic: setup, conflict, resolution"
 }}"""
 
-            print("Calling Bedrock Claude...")
+            print("Calling Mistral...")
             claude_response = invoke_claude(
                 prompt=analysis_prompt,
-                system="You are a content analysis expert. Always respond with valid JSON only."
+                system="You are a content analysis expert. Always respond with valid JSON only. No markdown, no backticks, no extra text."
             )
-            print(f"Claude response length: {len(claude_response)}")
+            print(f"Mistral response length: {len(claude_response)}")
 
-            json_match = re.search(r'\{[\s\S]*\}', claude_response)
+            # Fix: clean response before parsing
+            cleaned = claude_response.strip()
+            cleaned = re.sub(r'^```json\s*', '', cleaned)
+            cleaned = re.sub(r'^```\s*', '', cleaned)
+            cleaned = re.sub(r'```\s*$', '', cleaned)
+            cleaned = cleaned.strip()
+
+            json_match = re.search(r'\{[\s\S]*\}', cleaned)
             if json_match:
                 ai_analysis = json.loads(json_match.group())
-                print("Claude JSON parsed successfully")
+                print("Mistral JSON parsed successfully")
             else:
-                raise Exception("No JSON found in Claude response")
+                raise Exception("No JSON found in Mistral response")
 
         except Exception as e:
-            print(f"Bedrock failed: {str(e)}")
+            print(f"Mistral failed: {str(e)}")
             ai_analysis = {
                 'key_themes': key_phrase_texts[:4],
                 'quotable_moments': [],
@@ -116,8 +124,8 @@ Return a JSON object with EXACTLY these fields (no extra text, just JSON):
                 'humor_score': 0.3,
                 'core_conflict': 'Unknown',
                 'target_emotion': sentiment,
-                'meme_potential': '',
-                'comic_storyline': '',
+                'meme_potential': 'ironic contrast between expectation and reality',
+                'comic_storyline': 'Setup: introduce the topic. Conflict: show the challenge. Resolution: reveal the insight.',
             }
 
         # ── Step 3: Merge Results ─────────────────────────────────
