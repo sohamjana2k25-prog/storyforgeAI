@@ -36,9 +36,9 @@ def get_titan_size(width, height):
     w = min(TITAN_SIZES, key=lambda x: abs(x - width))
     h = min(TITAN_SIZES, key=lambda x: abs(x - height))
     return w, h
-
+  
 def placeholder(width, height, text, color='00e5ff'):
-    return f'[https://placehold.co/](https://placehold.co/){width}x{height}/0a0d14/{color}?text={text}'
+    return f'https://placehold.co/{width}x{height}/0a0d14/{color}?text={text}'
 
 
 def generate_comic(event):
