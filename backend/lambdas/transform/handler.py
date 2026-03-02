@@ -15,8 +15,8 @@ import json
 import os
 import re
 import uuid
-from utils import (ok, error, handle_options, invoke_claude, invoke_sdxl,
-                   upload_image_to_s3, get_s3_client)
+from utils import ok, error, handle_options, invoke_claude, invoke_sdxl, upload_image_to_s3, get_s3_client
+import traceback
 
 S3_BUCKET = os.environ.get('S3_BUCKET', '')
 
@@ -295,16 +295,21 @@ ROUTE_MAP = {
 
 
 def lambda_handler(event, context):
-    print(f"Event: {json.dumps(event)}")
+    try:
+        print(f"Transform handler started")
+        method = event.get('httpMethod', 'GET')
+        path = event.get('path', '/')
 
-    method = event.get('httpMethod', 'GET')
-    path = event.get('path', '/')
+        if method == 'OPTIONS':
+            return handle_options()
 
-    if method == 'OPTIONS':
-        return handle_options()
+        handler_fn = ROUTE_MAP.get((method, path))
+        if not handler_fn:
+            return error(f'Route not found: {method} {path}', 404)
 
-    handler_fn = ROUTE_MAP.get((method, path))
-    if not handler_fn:
-        return error(f'Route not found: {method} {path}', 404)
+        return handler_fn(event)
 
-    return handler_fn(event)
+    except Exception as e:
+        print(f"FATAL ERROR: {str(e)}")
+        print(traceback.format_exc())
+        return error(f'Fatal error: {str(e)}')
