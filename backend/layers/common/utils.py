@@ -138,7 +138,7 @@ def invoke_sdxl(prompt: str, negative_prompt: str = '', width: int = 1024, heigh
     }
 
     resp = client.invoke_model(
-        modelId='amazon.titan-image-generator-v1',
+        modelId='amazon.titan-image-generator-v2:0',
         body=json.dumps(body),
         contentType='application/json',
         accept='application/json',
