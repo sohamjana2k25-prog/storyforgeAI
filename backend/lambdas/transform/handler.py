@@ -1,8 +1,8 @@
 """
 Transform Lambda — The Transformation Engine
 --------------------------------------------
-POST /transform/comic       → Pipeline A: Visual Narrative (Comic/Webtoon)
-POST /transform/meme        → Pipeline B: Viral Visuals (Memes)
+POST /transform/comic         → Pipeline A: Visual Narrative (Comic/Webtoon)
+POST /transform/meme          → Pipeline B: Viral Visuals (Memes)
 POST /transform/infographic → Pipeline C: Professional Visuals (Infographics)
 
 Uses:
@@ -38,7 +38,7 @@ def get_titan_size(width, height):
     return w, h
 
 def placeholder(width, height, text, color='00e5ff'):
-    return f'https://placehold.co/{width}x{height}/0a0d14/{color}?text={text}'
+    return f'[https://placehold.co/](https://placehold.co/){width}x{height}/0a0d14/{color}?text={text}'
 
 
 def generate_comic(event):
@@ -222,41 +222,60 @@ def generate_infographic(event):
         dimensions = body.get('dimensions', '1080x1080')
         platform = body.get('platform', 'linkedin')
 
-        content_prompt = f"""Create a professional infographic for {platform}.
+        # 1. IMPROVED PROMPT: Enforces strict JSON formatting
+        content_prompt = f"""You are a JSON generator. output ONLY valid JSON.
+Create a professional infographic content structure for {platform}.
 
-Key themes: {key_themes}
-Data points: {data_points}
-Sentiment: {sentiment}
-Word limit: {word_limit}
+Context:
+- Themes: {key_themes}
+- Data: {data_points}
+- Tone: {sentiment}
 
-Return a JSON object:
+Return a JSON object with this EXACT structure (ensure all keys are quoted and list items separated by commas):
 {{
-  "title": "Headline max 8 words",
-  "subtitle": "Supporting line max 12 words",
+  "title": "Headline string",
+  "subtitle": "Subtitle string",
   "sections": [
     {{
       "heading": "Section heading",
-      "body": "Section body",
-      "stat": "Key statistic"
+      "body": "Section body text",
+      "stat": "Key statistic string"
     }}
   ],
   "call_to_action": "CTA text",
-  "image_prompt": "Detailed prompt for infographic visual"
+  "image_prompt": "Visual description for SDXL"
 }}"""
 
         print("Calling LLM for infographic content...")
-        content_response = invoke_claude(content_prompt, system="Return valid JSON only. No extra text.")
-        print(f"LLM infographic response length: {len(content_response)}")
+        # Add 'system' parameter to force JSON mode if your invoke_claude supports it
+        content_response = invoke_claude(content_prompt, system="Output strictly valid JSON only. Check for missing commas.")
+        print(f"LLM Response: {content_response[:100]}...") # Log first 100 chars to debug
 
-        json_match = re.search(r'\{[\s\S]*\}', content_response)
-        if not json_match:
-            return error('Failed to generate infographic content')
-
-        infographic_content = json.loads(json_match.group())
-        print("Infographic content parsed")
+        # 2. ROBUST PARSING: Cleans markdown and handles errors
+        try:
+            # Remove markdown code blocks (```json ... ```)
+            cleaned_json = re.sub(r'```json\s*|\s*```', '', content_response).strip()
+            # Find the first { and last } to ignore preamble text
+            match = re.search(r'\{.*\}', cleaned_json, re.DOTALL)
+            if match:
+                cleaned_json = match.group(0)
+            
+            infographic_content = json.loads(cleaned_json)
+            print("Infographic content parsed successfully")
+            
+        except json.JSONDecodeError as je:
+            print(f"JSON Parsing Failed: {je}")
+            print(f"Bad JSON: {content_response}")
+            # Fallback content so the app doesn't crash
+            infographic_content = {
+                "title": "Content Generated",
+                "subtitle": "Visual Repurposing",
+                "sections": [],
+                "image_prompt": "A professional business infographic, clean vector style",
+                "call_to_action": "Read more"
+            }
 
         width, height = 1024, 1024
-
         sentiment_style = {
             'professional': 'corporate clean design blue white palette minimal',
             'inspirational': 'vibrant warm colors bold typography motivational',
@@ -281,7 +300,6 @@ Return a JSON object:
             print(f"Infographic image error: {str(img_err)}")
             image_url = placeholder(1024, 1024, 'Infographic', 'b8ff57')
 
-        print("Infographic done")
         return ok({
             'image_url': image_url,
             'content': infographic_content,
@@ -296,9 +314,9 @@ Return a JSON object:
 
 
 ROUTE_MAP = {
-    ('POST', '/transform/comic'):        generate_comic,
-    ('POST', '/transform/meme'):         generate_meme,
-    ('POST', '/transform/infographic'):  generate_infographic,
+    ('POST', '/transform/comic'):         generate_comic,
+    ('POST', '/transform/meme'):          generate_meme,
+    ('POST', '/transform/infographic'):   generate_infographic,
 }
 
 
