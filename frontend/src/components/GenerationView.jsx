@@ -125,24 +125,76 @@ function MemeViewer({ memes }) {
 }
 
 function InfographicViewer({ infographic }) {
+  const content = infographic?.content || {}
+  const hashtags = content.hashtags || []
+  const [copied, setCopied] = useState(false)
+
+  const fullPost = `${content.title || ''}\n\n${content.body || ''}\n\n${content.cta || ''}\n\n${hashtags.join(' ')}`
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(fullPost)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="font-display font-bold text-white">Professional Infographic</h3>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--ghost)' }}>LinkedIn & formal content</p>
+          <h3 className="font-display font-bold text-white">LinkedIn Post</h3>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--ghost)' }}>Ready to post · Professional content</p>
         </div>
-        <button className="btn-neon text-xs py-1.5 px-3">⬇ Download PNG</button>
+        <button onClick={handleCopy} className="btn-neon text-xs py-1.5 px-3">
+          {copied ? '✅ Copied!' : '📋 Copy Post'}
+        </button>
       </div>
-      <div className="panel overflow-hidden">
-        <img src={infographic.image_url} alt="Infographic" className="w-full max-h-96 object-contain" style={{ background: 'var(--surface)' }} />
-        <div className="p-3 flex justify-between items-center">
-          <div className="flex gap-2">
-            <span className="tag tag-acid">LinkedIn</span>
-            <span className="tag tag-acid">Professional</span>
+
+      {/* LinkedIn Card */}
+      <div className="panel p-6" style={{ border: '1px solid var(--border)', maxWidth: '600px' }}>
+        {/* LinkedIn Header */}
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm"
+            style={{ background: 'var(--neon)' }}>CF</div>
+          <div>
+            <p className="text-white text-sm font-semibold">ContentForge AI</p>
+            <p className="text-xs" style={{ color: 'var(--ghost)' }}>AI-Generated · Just now</p>
           </div>
-          <button className="btn-neon text-xs py-1.5 px-3">Regenerate</button>
         </div>
+
+        {/* Hook */}
+        {content.hook && (
+          <p className="text-sm font-semibold mb-3" style={{ color: 'var(--neon)' }}>{content.hook}</p>
+        )}
+
+        {/* Title */}
+        {content.title && (
+          <p className="text-white font-bold text-base mb-3">{content.title}</p>
+        )}
+
+        {/* Body */}
+        <div className="text-sm mb-4" style={{ color: 'rgba(255,255,255,0.85)', lineHeight: '1.7', whiteSpace: 'pre-line' }}>
+          {content.body}
+        </div>
+
+        {/* CTA */}
+        {content.cta && (
+          <p className="text-sm font-semibold mb-4" style={{ color: 'var(--acid)' }}>{content.cta}</p>
+        )}
+
+        {/* Hashtags */}
+        <div className="flex flex-wrap gap-1">
+          {hashtags.map((tag, i) => (
+            <span key={i} className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(0,229,255,0.1)', color: 'var(--neon)' }}>
+              {tag}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Platform tags */}
+      <div className="flex gap-2 mt-3">
+        <span className="tag tag-acid">LinkedIn</span>
+        <span className="tag tag-acid">Professional</span>
       </div>
     </div>
   )
