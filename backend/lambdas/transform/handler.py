@@ -50,7 +50,7 @@ def generate_comic(event):
         art_style = body.get('art_style', 'flat')
         brand_tone = body.get('brand_tone', 50)
         character_desc = body.get('character_description', 'A young professional')
-        num_frames = min(int(body.get('frames', 10)), 12)
+        num_frames = min(int(body.get('frames', 4)), 4)
 
         tone_desc = 'humorous and casual' if brand_tone > 60 else 'professional and serious' if brand_tone < 30 else 'balanced'
 
