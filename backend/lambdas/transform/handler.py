@@ -251,27 +251,41 @@ Return ONLY this JSON object, no extra text:
         response = invoke_claude(content_prompt, system="Return valid JSON only. No markdown. No backticks. No extra text.", max_tokens=800)
         print(f"LLM response length: {len(response)}")
 
+        # Clean markdown fences
         cleaned = response.strip()
         cleaned = re.sub(r'```json\s*', '', cleaned)
         cleaned = re.sub(r'```\s*', '', cleaned)
         cleaned = cleaned.strip()
 
+        # Extract only the JSON object between first { and last }
+        first_brace = cleaned.find('{')
+        last_brace = cleaned.rfind('}')
+        if first_brace != -1 and last_brace != -1:
+            cleaned = cleaned[first_brace:last_brace+1]
+
         try:
-            json_match = re.search(r'\{[\s\S]*\}', cleaned)
-            if json_match:
-                content = json.loads(json_match.group())
-                print("LinkedIn post parsed successfully")
-            else:
-                raise Exception("No JSON found")
+            content = json.loads(cleaned)
+            print("LinkedIn post parsed successfully")
         except Exception as je:
-            print(f"Parse error: {str(je)}, using fallback")
-            content = {
-                'title': f'Key Insights: {", ".join(key_themes[:2]) if key_themes else "Content Analysis"}',
-                'body': 'Here are the key themes from our analysis:\n\n' + '\n'.join([f'• {t}' for t in key_themes]),
-                'hashtags': ['#LinkedIn', '#ContentMarketing', '#Insights', '#AI', '#ContentForge'],
-                'hook': 'Here are the key takeaways you need to know.',
-                'cta': 'What are your thoughts? Share in the comments below!',
-            }
+            print(f"Parse error: {str(je)}")
+            print(f"Cleaned JSON attempt: {cleaned[:200]}")
+            # Last resort regex
+            try:
+                json_match = re.search(r'\{[\s\S]*\}', response)
+                if json_match:
+                    content = json.loads(json_match.group())
+                    print("LinkedIn post parsed via regex fallback")
+                else:
+                    raise Exception("No JSON found")
+            except Exception:
+                print("All parsing failed, using fallback content")
+                content = {
+                    'title': f'Key Insights: {", ".join(str(t) for t in key_themes[:2]) if key_themes else "Content Analysis"}',
+                    'body': 'Here are the key themes from our analysis:\n\n' + '\n'.join([f'• {t}' for t in key_themes]),
+                    'hashtags': ['#LinkedIn', '#ContentMarketing', '#Insights', '#AI', '#ContentForge'],
+                    'hook': 'Here are the key takeaways you need to know.',
+                    'cta': 'What are your thoughts? Share in the comments below!',
+                }
 
         print("LinkedIn post generation done")
         return ok({
