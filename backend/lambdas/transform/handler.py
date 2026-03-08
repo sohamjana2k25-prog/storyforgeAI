@@ -91,12 +91,13 @@ Make the story flow: Setup Rising Action Conflict Resolution Punchline"""
                 try:
                     print(f"Generating real image for panel 1...")
                     # Safe, simple prompt to avoid content filter
+                    scene = panel.get('scene_description', 'a person at work')
+                    scene = scene[:100]
                     image_prompt = (
-                        f"cartoon illustration, {art_style} art style, "
-                        f"a person feeling {panel.get('emotion', 'happy')}, "
-                        f"simple clean background, "
-                        f"professional comic panel, colorful, family friendly, "
-                        f"{style_prompt}"
+                        f"cartoon flat design illustration, "
+                        f"{scene}, "
+                        f"family friendly, colorful, clean background, "
+                        f"professional comic panel, {style_prompt}"
                     )
                     negative = "blurry, low quality, distorted, text, watermark, nsfw, violent"
                     image_bytes = invoke_sdxl(image_prompt, negative, width, height)
