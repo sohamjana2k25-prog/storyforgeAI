@@ -249,7 +249,7 @@ Return ONLY this JSON object, no extra text:
         # Try up to 2 times in case Mistral returns broken JSON
         response = None
         for attempt in range(2):
-            response = invoke_claude(content_prompt, system="Return valid JSON only. No markdown. No backticks. No extra text.", max_tokens=800)
+            response = invoke_claude(content_prompt, system="Return valid JSON only. No markdown. No backticks. No extra text.", max_tokens=1500)
             first_brace = response.find('{')
             last_brace = response.rfind('}')
             if first_brace != -1 and last_brace != -1:
