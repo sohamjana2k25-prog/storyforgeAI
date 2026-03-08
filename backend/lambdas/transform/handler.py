@@ -72,7 +72,6 @@ Return a JSON array of exactly 1 panel:
         script_response = invoke_claude(script_prompt, system="Return valid JSON array only. No extra text.", max_tokens=500)
         print(f"LLM response length: {len(script_response)}")
 
-        # Extract first valid JSON array only
         text = script_response
         depth, start, end = 0, None, None
         for idx, ch in enumerate(text):
@@ -145,7 +144,6 @@ def generate_meme(event):
         platform = body.get('platform', 'twitter')
         tone = body.get('tone', 'humorous')
         brand_persona = body.get('brand_persona', 'GenZ')
-        count = 1
 
         meme_potential = content_analysis.get('meme_potential', '')
         core_conflict = content_analysis.get('core_conflict', '')
@@ -249,7 +247,7 @@ Return ONLY this JSON object, no extra text:
 }}"""
 
         # Try up to 2 times in case Mistral returns broken JSON
-       response = None
+        response = None
         for attempt in range(2):
             response = invoke_claude(content_prompt, system="Return valid JSON only. No markdown. No backticks. No extra text.", max_tokens=800)
             first_brace = response.find('{')
@@ -263,15 +261,14 @@ Return ONLY this JSON object, no extra text:
                     print(f"Invalid JSON on attempt {attempt+1}, retrying...")
             else:
                 print(f"No JSON found on attempt {attempt+1}, retrying...")
+
         print(f"LLM response length: {len(response)}")
 
-        # Clean markdown fences
         cleaned = response.strip()
         cleaned = re.sub(r'```json\s*', '', cleaned)
         cleaned = re.sub(r'```\s*', '', cleaned)
         cleaned = cleaned.strip()
 
-        # Extract only the JSON object between first { and last }
         first_brace = cleaned.find('{')
         last_brace = cleaned.rfind('}')
         if first_brace != -1 and last_brace != -1:
@@ -283,7 +280,6 @@ Return ONLY this JSON object, no extra text:
         except Exception as je:
             print(f"Parse error: {str(je)}")
             print(f"Cleaned JSON attempt: {cleaned[:200]}")
-            # Last resort regex
             try:
                 json_match = re.search(r'\{[\s\S]*\}', response)
                 if json_match:
