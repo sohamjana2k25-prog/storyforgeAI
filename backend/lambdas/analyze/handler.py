@@ -23,7 +23,6 @@ def analyze_content(event):
         # ── Step 1: Amazon Comprehend ─────────────────────────────
         try:
             comprehend = get_comprehend_client()
-            # Fix: encode to bytes and truncate to 4900 bytes not chars
             comprehend_text = text.encode('utf-8')[:4900].decode('utf-8', errors='ignore')
 
             sentiment_resp = comprehend.detect_sentiment(
@@ -96,22 +95,28 @@ Return a JSON object with EXACTLY these fields (no extra text, just JSON):
             print("Calling Mistral...")
             claude_response = invoke_claude(
                 prompt=analysis_prompt,
-                system="You are a content analysis expert. Always respond with valid JSON only. No markdown, no backticks, no extra text."
+                system="You are a content analysis expert. Always respond with valid JSON only. No markdown, no backticks, no extra text. Never escape underscores."
             )
             print(f"Mistral response length: {len(claude_response)}")
+            print(f"Mistral raw response: {claude_response[:500]}")
 
-            # Fix: clean response before parsing
             cleaned = claude_response.strip()
             cleaned = re.sub(r'^```json\s*', '', cleaned)
             cleaned = re.sub(r'^```\s*', '', cleaned)
             cleaned = re.sub(r'```\s*$', '', cleaned)
             cleaned = cleaned.strip()
             cleaned = cleaned.replace('\t', '  ')
+            cleaned = cleaned.replace('\\_', '_')
+            cleaned = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', cleaned)
+
+            print(f"Cleaned response: {cleaned[:500]}")
 
             json_match = re.search(r'\{[\s\S]*\}', cleaned)
             if json_match:
                 ai_analysis = json.loads(json_match.group())
                 print("Mistral JSON parsed successfully")
+                print(f"quotable_moments: {ai_analysis.get('quotable_moments')}")
+                print(f"meme_potential: {ai_analysis.get('meme_potential')}")
             else:
                 raise Exception("No JSON found in Mistral response")
 
