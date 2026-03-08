@@ -230,12 +230,11 @@ def generate_infographic(event):
         platform = body.get('platform', 'linkedin')
 
         print("Calling LLM for LinkedIn post...")
-        content_prompt = f"""Write a professional LinkedIn post based on this content.
+        content_prompt = f"""Write a short professional LinkedIn post based on this content.
 
 Key themes: {key_themes}
-Data points: {data_points}
 Tone: {sentiment}
-Word limit: {word_limit} words
+Word limit: 80 words maximum. Keep body field under 300 characters.
 
 Return ONLY this JSON object, no extra text:
 {{
