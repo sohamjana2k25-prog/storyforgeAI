@@ -45,18 +45,18 @@ def generate_comic(event):
         art_style = body.get('art_style', 'flat')
         brand_tone = body.get('brand_tone', 50)
         character_desc = body.get('character_description', 'A young professional')
-        num_frames = 2
+        num_frames = 1
 
         tone_desc = 'humorous and casual' if brand_tone > 60 else 'professional and serious' if brand_tone < 30 else 'balanced'
 
-        script_prompt = f"""Create a {num_frames}-panel comic strip script based on this content:
+        script_prompt = f"""Create a 1-panel comic strip script based on this content:
 
 Content/Theme: {script[:3000]}
 Character: {character_desc}
 Tone: {tone_desc}
 Art Style: {art_style}
 
-Return a JSON array of {num_frames} panels:
+Return a JSON array of exactly 1 panel:
 [
   {{
     "panel_number": 1,
@@ -66,80 +66,69 @@ Return a JSON array of {num_frames} panels:
     "emotion": "Character emotion in this panel",
     "background": "Brief background description"
   }}
-]
-
-Make the story flow: Setup Rising Action Conflict Resolution Punchline"""
+]"""
 
         print("Calling LLM for comic script...")
-        script_response = invoke_claude(script_prompt, system="Return valid JSON array only. No extra text.", max_tokens=1000)
+        script_response = invoke_claude(script_prompt, system="Return valid JSON array only. No extra text.", max_tokens=500)
         print(f"LLM response length: {len(script_response)}")
 
-        json_match = re.search(r'\[[\s\S]*?\](?=\s*$|\s*[^,\s])', script_response)
-        if not json_match:
-            json_match = re.search(r'\[[\s\S]*\]', script_response)
-        if not json_match:
+        # Extract first valid JSON array only
+        text = script_response
+        depth, start, end = 0, None, None
+        for idx, ch in enumerate(text):
+            if ch == '[' and start is None:
+                start, depth = idx, 1
+            elif ch == '[' and start is not None:
+                depth += 1
+            elif ch == ']' and start is not None:
+                depth -= 1
+                if depth == 0:
+                    end = idx + 1
+                    break
+
+        if start is None or end is None:
             return error('Failed to generate comic script')
 
         try:
-            panels_script = json.loads(json_match.group())
-        except json.JSONDecodeError:
-            # Take only first valid JSON array
-            text = script_response
-            depth, start, end = 0, None, None
-            for i, ch in enumerate(text):
-                if ch == '[' and start is None:
-                    start, depth = i, 1
-                elif ch == '[' and start is not None:
-                    depth += 1
-                elif ch == ']' and start is not None:
-                    depth -= 1
-                    if depth == 0:
-                        end = i + 1
-                        break
-            if start is not None and end is not None:
-                panels_script = json.loads(text[start:end])
-            else:
-                return error('Failed to parse comic script')
+            panels_script = json.loads(text[start:end])
+        except Exception as pe:
+            print(f"JSON parse error: {str(pe)}")
+            return error('Failed to parse comic script')
+
         print(f"Parsed {len(panels_script)} panels")
 
         style_prompt = ART_STYLE_PROMPTS.get(art_style, ART_STYLE_PROMPTS['flat'])
         width, height = 1024, 1024
 
-        frames = []
-        for i, panel in enumerate(panels_script[:num_frames]):
-            # Only generate real image for panel 1 to stay within timeout
-            if i < 2:
-                try:
-                    print(f"Generating real image for panel 1...")
-                    # Safe, simple prompt to avoid content filter
-                    scene = panel.get('scene_description', 'a person at work')
-                    scene = scene[:100]
-                    image_prompt = (
-                        f"cartoon flat design illustration, "
-                        f"{scene}, "
-                        f"family friendly, colorful, clean background, "
-                        f"professional comic panel, {style_prompt}"
-                    )
-                    negative = "blurry, low quality, distorted, text, watermark, nsfw, violent"
-                    image_bytes = invoke_sdxl(image_prompt, negative, width, height)
-                    s3_key = f'comics/{uuid.uuid4()}/panel_1.png'
-                    image_url = upload_image_to_s3(image_bytes, s3_key, S3_BUCKET)
-                    print(f"Panel 1 image uploaded successfully")
-                except Exception as img_err:
-                    print(f"Panel 1 image failed, using placeholder: {str(img_err)}")
-                    image_url = placeholder(width, height, 'Panel+1')
-            else:
-                image_url = placeholder(width, height, f'Panel+{panel["panel_number"]}')
+        panel = panels_script[0]
+        try:
+            print("Generating real image for panel 1...")
+            scene = panel.get('scene_description', 'a person at work')
+            scene = scene[:100]
+            image_prompt = (
+                f"cartoon flat design illustration, "
+                f"{scene}, "
+                f"family friendly, colorful, clean background, "
+                f"professional comic panel, {style_prompt}"
+            )
+            negative = "blurry, low quality, distorted, text, watermark, nsfw, violent"
+            image_bytes = invoke_sdxl(image_prompt, negative, width, height)
+            s3_key = f'comics/{uuid.uuid4()}/panel_1.png'
+            image_url = upload_image_to_s3(image_bytes, s3_key, S3_BUCKET)
+            print("Panel 1 image uploaded successfully")
+        except Exception as img_err:
+            print(f"Panel 1 image failed, using placeholder: {str(img_err)}")
+            image_url = placeholder(width, height, 'Panel+1')
 
-            frames.append({
-                'panel_number': panel['panel_number'],
-                'image_url': image_url,
-                'caption': panel.get('caption', ''),
-                'dialogue': panel.get('dialogue'),
-                'scene_description': panel.get('scene_description', ''),
-            })
+        frames = [{
+            'panel_number': 1,
+            'image_url': image_url,
+            'caption': panel.get('caption', ''),
+            'dialogue': panel.get('dialogue'),
+            'scene_description': panel.get('scene_description', ''),
+        }]
 
-        print(f"Comic done, {len(frames)} frames")
+        print("Comic done, 1 frame")
         return ok({'frames': frames, 'style': art_style, 'orientation': orientation})
 
     except Exception as e:
@@ -194,38 +183,36 @@ Return a JSON array with exactly 1 meme object:
         meme_concepts = json.loads(json_match.group())
         print(f"Parsed {len(meme_concepts)} meme concepts")
 
-        memes = []
-        for concept in meme_concepts[:count]:
-            # Safe image prompt to avoid content filter
-            image_prompt = (
-                f"cartoon illustration, funny expression, "
-                f"simple clean background, bright colors, "
-                f"family friendly meme style, flat design, "
-                f"expressive character, internet humor aesthetic"
-            )
-            negative = "blurry, low quality, distorted, text, watermark, nsfw, violent"
+        concept = meme_concepts[0]
+        image_prompt = (
+            f"cartoon illustration, funny expression, "
+            f"simple clean background, bright colors, "
+            f"family friendly meme style, flat design, "
+            f"expressive character, internet humor aesthetic"
+        )
+        negative = "blurry, low quality, distorted, text, watermark, nsfw, violent"
 
-            try:
-                print(f"Generating meme image...")
-                image_bytes = invoke_sdxl(image_prompt, negative, width=1024, height=1024)
-                s3_key = f'memes/{uuid.uuid4()}.png'
-                image_url = upload_image_to_s3(image_bytes, s3_key, S3_BUCKET)
-                print(f"Meme image uploaded successfully")
-            except Exception as img_err:
-                print(f"Meme image error: {str(img_err)}")
-                image_url = placeholder(1024, 1024, 'Meme', 'ff6b35')
+        try:
+            print("Generating meme image...")
+            image_bytes = invoke_sdxl(image_prompt, negative, width=1024, height=1024)
+            s3_key = f'memes/{uuid.uuid4()}.png'
+            image_url = upload_image_to_s3(image_bytes, s3_key, S3_BUCKET)
+            print("Meme image uploaded successfully")
+        except Exception as img_err:
+            print(f"Meme image error: {str(img_err)}")
+            image_url = placeholder(1024, 1024, 'Meme', 'ff6b35')
 
-            memes.append({
-                'id': len(memes) + 1,
-                'image_url': image_url,
-                'top_text': concept.get('top_text', ''),
-                'bottom_text': concept.get('bottom_text', ''),
-                'caption': concept.get('caption', ''),
-                'hashtags': concept.get('hashtags', []),
-                'format': concept.get('format', 'classic'),
-            })
+        memes = [{
+            'id': 1,
+            'image_url': image_url,
+            'top_text': concept.get('top_text', ''),
+            'bottom_text': concept.get('bottom_text', ''),
+            'caption': concept.get('caption', ''),
+            'hashtags': concept.get('hashtags', []),
+            'format': concept.get('format', 'classic'),
+        }]
 
-        print(f"Meme done, {len(memes)} memes")
+        print("Meme done, 1 meme")
         return ok({'memes': memes})
 
     except Exception as e:
@@ -280,7 +267,7 @@ Return ONLY this JSON object, no extra text:
             print(f"Parse error: {str(je)}, using fallback")
             content = {
                 'title': f'Key Insights: {", ".join(key_themes[:2]) if key_themes else "Content Analysis"}',
-                'body': f'Here are the key themes from our analysis:\n\n' + '\n'.join([f'• {t}' for t in key_themes]),
+                'body': 'Here are the key themes from our analysis:\n\n' + '\n'.join([f'• {t}' for t in key_themes]),
                 'hashtags': ['#LinkedIn', '#ContentMarketing', '#Insights', '#AI', '#ContentForge'],
                 'hook': 'Here are the key takeaways you need to know.',
                 'cta': 'What are your thoughts? Share in the comments below!',
