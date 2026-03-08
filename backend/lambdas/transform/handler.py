@@ -45,7 +45,7 @@ def generate_comic(event):
         art_style = body.get('art_style', 'flat')
         brand_tone = body.get('brand_tone', 50)
         character_desc = body.get('character_description', 'A young professional')
-        num_frames = min(int(body.get('frames', 4)), 4)
+        num_frames = 2
 
         tone_desc = 'humorous and casual' if brand_tone > 60 else 'professional and serious' if brand_tone < 30 else 'balanced'
 
@@ -87,7 +87,7 @@ Make the story flow: Setup Rising Action Conflict Resolution Punchline"""
         frames = []
         for i, panel in enumerate(panels_script[:num_frames]):
             # Only generate real image for panel 1 to stay within timeout
-            if i == 0:
+            if i < 2:
                 try:
                     print(f"Generating real image for panel 1...")
                     # Safe, simple prompt to avoid content filter
