@@ -248,7 +248,21 @@ Return ONLY this JSON object, no extra text:
   "cta": "Engaging call to action question for comments"
 }}"""
 
-        response = invoke_claude(content_prompt, system="Return valid JSON only. No markdown. No backticks. No extra text.", max_tokens=800)
+        # Try up to 2 times in case Mistral returns broken JSON
+       response = None
+        for attempt in range(2):
+            response = invoke_claude(content_prompt, system="Return valid JSON only. No markdown. No backticks. No extra text.", max_tokens=800)
+            first_brace = response.find('{')
+            last_brace = response.rfind('}')
+            if first_brace != -1 and last_brace != -1:
+                try:
+                    json.loads(response[first_brace:last_brace+1])
+                    print(f"Valid JSON on attempt {attempt+1}")
+                    break
+                except:
+                    print(f"Invalid JSON on attempt {attempt+1}, retrying...")
+            else:
+                print(f"No JSON found on attempt {attempt+1}, retrying...")
         print(f"LLM response length: {len(response)}")
 
         # Clean markdown fences
