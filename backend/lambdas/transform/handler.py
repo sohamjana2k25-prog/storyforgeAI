@@ -274,6 +274,11 @@ Return ONLY this JSON object, no extra text:
         if first_brace != -1 and last_brace != -1:
             cleaned = cleaned[first_brace:last_brace+1]
 
+        # Fix Mistral JSON issues
+        cleaned = re.sub(r'\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})', r'\\\\', cleaned)
+        cleaned = re.sub(r',\s*}', '}', cleaned)
+        cleaned = re.sub(r',\s*]', ']', cleaned)
+
         try:
             content = json.loads(cleaned)
             print("LinkedIn post parsed successfully")
