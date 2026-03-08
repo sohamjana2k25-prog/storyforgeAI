@@ -74,11 +74,32 @@ Make the story flow: Setup Rising Action Conflict Resolution Punchline"""
         script_response = invoke_claude(script_prompt, system="Return valid JSON array only. No extra text.", max_tokens=1000)
         print(f"LLM response length: {len(script_response)}")
 
-        json_match = re.search(r'\[[\s\S]*\]', script_response)
+        json_match = re.search(r'\[[\s\S]*?\](?=\s*$|\s*[^,\s])', script_response)
+        if not json_match:
+            json_match = re.search(r'\[[\s\S]*\]', script_response)
         if not json_match:
             return error('Failed to generate comic script')
 
-        panels_script = json.loads(json_match.group())
+        try:
+            panels_script = json.loads(json_match.group())
+        except json.JSONDecodeError:
+            # Take only first valid JSON array
+            text = script_response
+            depth, start, end = 0, None, None
+            for i, ch in enumerate(text):
+                if ch == '[' and start is None:
+                    start, depth = i, 1
+                elif ch == '[' and start is not None:
+                    depth += 1
+                elif ch == ']' and start is not None:
+                    depth -= 1
+                    if depth == 0:
+                        end = i + 1
+                        break
+            if start is not None and end is not None:
+                panels_script = json.loads(text[start:end])
+            else:
+                return error('Failed to parse comic script')
         print(f"Parsed {len(panels_script)} panels")
 
         style_prompt = ART_STYLE_PROMPTS.get(art_style, ART_STYLE_PROMPTS['flat'])
