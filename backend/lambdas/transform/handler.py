@@ -71,7 +71,7 @@ Return a JSON array of {num_frames} panels:
 Make the story flow: Setup Rising Action Conflict Resolution Punchline"""
 
         print("Calling LLM for comic script...")
-        script_response = invoke_claude(script_prompt, system="Return valid JSON array only. No extra text.")
+        script_response = invoke_claude(script_prompt, system="Return valid JSON array only. No extra text.", max_tokens=1000)
         print(f"LLM response length: {len(script_response)}")
 
         json_match = re.search(r'\[[\s\S]*\]', script_response)
@@ -81,11 +81,34 @@ Make the story flow: Setup Rising Action Conflict Resolution Punchline"""
         panels_script = json.loads(json_match.group())
         print(f"Parsed {len(panels_script)} panels")
 
+        style_prompt = ART_STYLE_PROMPTS.get(art_style, ART_STYLE_PROMPTS['flat'])
         width, height = 1024, 1024
 
         frames = []
-        for panel in panels_script[:num_frames]:
-            image_url = placeholder(width, height, f'Panel+{panel["panel_number"]}')
+        for i, panel in enumerate(panels_script[:num_frames]):
+            # Only generate real image for panel 1 to stay within timeout
+            if i == 0:
+                try:
+                    print(f"Generating real image for panel 1...")
+                    # Safe, simple prompt to avoid content filter
+                    image_prompt = (
+                        f"cartoon illustration, {art_style} art style, "
+                        f"a person feeling {panel.get('emotion', 'happy')}, "
+                        f"simple clean background, "
+                        f"professional comic panel, colorful, family friendly, "
+                        f"{style_prompt}"
+                    )
+                    negative = "blurry, low quality, distorted, text, watermark, nsfw, violent"
+                    image_bytes = invoke_sdxl(image_prompt, negative, width, height)
+                    s3_key = f'comics/{uuid.uuid4()}/panel_1.png'
+                    image_url = upload_image_to_s3(image_bytes, s3_key, S3_BUCKET)
+                    print(f"Panel 1 image uploaded successfully")
+                except Exception as img_err:
+                    print(f"Panel 1 image failed, using placeholder: {str(img_err)}")
+                    image_url = placeholder(width, height, 'Panel+1')
+            else:
+                image_url = placeholder(width, height, f'Panel+{panel["panel_number"]}')
+
             frames.append({
                 'panel_number': panel['panel_number'],
                 'image_url': image_url,
@@ -139,7 +162,7 @@ Return a JSON array with exactly 1 meme object:
 ]"""
 
         print("Calling LLM for meme concepts...")
-        meme_response = invoke_claude(meme_prompt, system="Return valid JSON array only. No extra text.")
+        meme_response = invoke_claude(meme_prompt, system="Return valid JSON array only. No extra text.", max_tokens=500)
         print(f"LLM meme response length: {len(meme_response)}")
 
         json_match = re.search(r'\[[\s\S]*\]', meme_response)
@@ -151,18 +174,21 @@ Return a JSON array with exactly 1 meme object:
 
         memes = []
         for concept in meme_concepts[:count]:
+            # Safe image prompt to avoid content filter
             image_prompt = (
-                f"{concept.get('image_concept', 'funny meme illustration')}, "
-                f"meme format, internet humor, viral content, "
-                f"flat illustration style, simple background, expressive characters"
+                f"cartoon illustration, funny expression, "
+                f"simple clean background, bright colors, "
+                f"family friendly meme style, flat design, "
+                f"expressive character, internet humor aesthetic"
             )
+            negative = "blurry, low quality, distorted, text, watermark, nsfw, violent"
 
             try:
-                print(f"Generating meme image {len(memes)+1}...")
-                image_bytes = invoke_sdxl(image_prompt, width=1024, height=1024)
+                print(f"Generating meme image...")
+                image_bytes = invoke_sdxl(image_prompt, negative, width=1024, height=1024)
                 s3_key = f'memes/{uuid.uuid4()}.png'
                 image_url = upload_image_to_s3(image_bytes, s3_key, S3_BUCKET)
-                print(f"Meme image {len(memes)+1} uploaded")
+                print(f"Meme image uploaded successfully")
             except Exception as img_err:
                 print(f"Meme image error: {str(img_err)}")
                 image_url = placeholder(1024, 1024, 'Meme', 'ff6b35')
@@ -213,7 +239,7 @@ Return ONLY this JSON object, no extra text:
   "cta": "Engaging call to action question for comments"
 }}"""
 
-        response = invoke_claude(content_prompt, system="Return valid JSON only. No markdown. No backticks. No extra text.")
+        response = invoke_claude(content_prompt, system="Return valid JSON only. No markdown. No backticks. No extra text.", max_tokens=800)
         print(f"LLM response length: {len(response)}")
 
         cleaned = response.strip()
