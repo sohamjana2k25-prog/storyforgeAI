@@ -1,10 +1,10 @@
-# ⚡ ContentForge AI — Content Repurposing Ecosystem
+#  ContentForge AI — Content Repurposing Ecosystem
 
 **AWS AI 4 Bharat Hackathon** — Transform one blog post into three viral, platform-ready assets using AWS AI services.
 
 ---
 
-## 🏗️ Architecture
+##  Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -29,7 +29,7 @@
 
 ---
 
-## 🚀 AWS Services Used
+##  AWS Services Used
 
 | Service | Purpose | Pipeline Stage |
 |---------|---------|----------------|
